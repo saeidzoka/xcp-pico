@@ -1,0 +1,71 @@
+# Build outputs
+build/
+build-*/
+out/
+bin/
+*.elf
+*.bin
+*.hex
+*.uf2
+*.map
+*.dis
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# Object files and libs
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+
+# Debug files
+*.d
+*.gdb_history
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+.env
+
+# IDE / Editor
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# J-Link
+JLinkLog.txt
+*.jdebug
+*.jflash
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
