@@ -18,6 +18,7 @@
 
 #include "xcp_config.h"
 #include "xcp_transport_usb.h"
+#include "xcp_transport_sxi.h"
 
 /* Heartbeat: blink the on-board LED at ~2 Hz so it's obvious whether the
  * firmware is running or has hung. The interval is checked against the
@@ -78,6 +79,7 @@ int main(void)
 
     heartbeat_init();
     xcp_transport_usb_init();
+    xcp_transport_sxi_init();
 
     /* Main loop. tinyusb is cooperative, so xcp_transport_usb_task() must
      * run frequently. Anything that blocks here will stall USB.
