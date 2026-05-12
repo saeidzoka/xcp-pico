@@ -7,6 +7,11 @@
 
 cmake_minimum_required(VERSION 3.13)
 
+# Generate compile_commands.json for clangd / VS Code IntelliSense.
+# This file lists the exact compiler invocation for every source file,
+# so external tools can resolve includes without parsing CMake themselves.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Pull in the Pico SDK (must come before project() call).
 # The SDK is located via the PICO_SDK_PATH environment variable.
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)

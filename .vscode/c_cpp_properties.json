@@ -1,0 +1,12 @@
+{
+    "configurations": [
+        {
+            "name": "Pico",
+            "compileCommands": "${workspaceFolder}/firmware/build/compile_commands.json",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-arm"
+        }
+    ],
+    "version": 4
+}
