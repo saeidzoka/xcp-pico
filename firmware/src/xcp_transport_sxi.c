@@ -78,6 +78,91 @@ static void rx_reset(void)
     rx_expected_payload_len = 0;
 }
 
+/**
+ * Extract a little-endian 16-bit value from the buffer.
+ *
+ * SxI uses little-endian byte order per ASAM XCP V1.5 Part 2.
+ * RP2350 is also little-endian, but we avoid type punning to
+ * stay portable and to make the byte order explicit at the
+ * call site.
+ */
+static uint16_t read_u16_le(const uint8_t *p)
+{
+    return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
+}
+
+/**
+ * Parse the SxI header from rx_buffer[0..3] and decide whether
+ * to advance to WAIT_PAYLOAD, mark FRAME_READY (zero-length
+ * payload), or trigger error recovery.
+ */
+static void handle_header_complete(void)
+{
+    const uint16_t len = read_u16_le(&rx_buffer[0]);
+    const uint16_t ctr = read_u16_le(&rx_buffer[2]);
+
+    /* LEN validation: payload must fit within the maximum
+     * configured CTO size. An oversized LEN almost certainly
+     * means we are out of sync, not legitimate corruption,
+     * because USB CDC is a reliable transport.
+     */
+    if (len > XCP_MAX_CTO) {
+        stats.framing_errors++;
+        stats.bytes_dropped += rx_index;
+        rx_reset();
+        return;
+    }
+
+    /* CTR gap detection. We log the gap but still accept the
+     * frame. The upper protocol layer decides how to react
+     * (retry, abort, ignore).
+     *
+     * Wraparound from 0xFFFF to 0x0000 is a legal sequential
+     * transition; uint16_t arithmetic handles it transparently.
+     */
+    if (rx_ctr_initialised) {
+        const uint16_t expected = (uint16_t)(rx_last_ctr + 1u);
+        if (ctr != expected) {
+            stats.ctr_errors++;
+        }
+    } else {
+        rx_ctr_initialised = true;
+    }
+    rx_last_ctr = ctr;
+
+    rx_expected_payload_len = len;
+
+    if (len == 0u) {
+        /* Header-only frame: nothing more to receive. */
+        rx_state = SXI_STATE_FRAME_READY;
+    } else {
+        rx_state = SXI_STATE_WAIT_PAYLOAD;
+    }
+}
+
+/**
+ * Check the inter-byte idle timeout. If the parser is mid-frame
+ * and no bytes have arrived recently, recover by resetting.
+ */
+static void check_idle_timeout(void)
+{
+    if (rx_state == SXI_STATE_WAIT_HEADER && rx_index == 0u) {
+        /* Nothing in flight; no timeout to check. */
+        return;
+    }
+    if (rx_state == SXI_STATE_FRAME_READY) {
+        /* Waiting on the consumer, not on the wire. */
+        return;
+    }
+
+    const uint32_t now = time_us_32();
+    if ((now - rx_last_byte_time_us) > XCP_SXI_IDLE_TIMEOUT_US) {
+        stats.idle_timeouts++;
+        stats.bytes_dropped += rx_index;
+        rx_reset();
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* Public API                                                          */
 /* ------------------------------------------------------------------ */
@@ -96,8 +181,62 @@ void xcp_transport_sxi_init(void)
 
 void xcp_transport_sxi_task(void)
 {
-    /* Stub: implementation in stage 2 */
-    (void)0;
+    /* Always check the timeout first, even if no new bytes arrive.
+     * This recovers from a stalled transmission where the master
+     * abandoned the frame mid-stream.
+     */
+    check_idle_timeout();
+
+    /* If a complete frame is already waiting for the consumer,
+     * don't read more bytes from the USB layer. This is the
+     * back-pressure mechanism: bytes accumulate in the tinyusb
+     * RX buffer until the consumer drains the current frame.
+     */
+    if (rx_state == SXI_STATE_FRAME_READY) {
+        return;
+    }
+
+    /* Decide how many bytes we need right now. We pull exactly
+     * what's missing for the current state; this keeps the
+     * parser logic trivial (no leftover-byte handling between
+     * state transitions).
+     */
+    size_t bytes_needed;
+    if (rx_state == SXI_STATE_WAIT_HEADER) {
+        bytes_needed = SXI_HEADER_SIZE - rx_index;
+    } else {
+        /* WAIT_PAYLOAD: rx_index counts total bytes received
+         * (header + payload so far). Remaining payload bytes
+         * are (header + expected payload) minus what we have.
+         */
+        bytes_needed = (SXI_HEADER_SIZE + rx_expected_payload_len) - rx_index;
+    }
+
+    const size_t received = xcp_transport_usb_receive(&rx_buffer[rx_index],
+                                                      bytes_needed);
+    if (received == 0u) {
+        return;
+    }
+
+    rx_index += received;
+    rx_last_byte_time_us = time_us_32();
+
+    /* State transition checks. */
+    if (rx_state == SXI_STATE_WAIT_HEADER &&
+        rx_index >= SXI_HEADER_SIZE) {
+        handle_header_complete();
+        /* handle_header_complete() may have transitioned us to
+         * WAIT_PAYLOAD, FRAME_READY, or back to WAIT_HEADER on
+         * error. We do NOT continue parsing in this task() call;
+         * the next call will pick up where we left off.
+         */
+        return;
+    }
+
+    if (rx_state == SXI_STATE_WAIT_PAYLOAD &&
+        rx_index >= (SXI_HEADER_SIZE + rx_expected_payload_len)) {
+        rx_state = SXI_STATE_FRAME_READY;
+    }
 }
 
 bool xcp_transport_sxi_packet_available(void)
