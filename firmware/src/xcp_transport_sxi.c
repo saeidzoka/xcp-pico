@@ -307,7 +307,7 @@ xcp_sxi_status_t xcp_transport_sxi_send_packet(const uint8_t *data, size_t len)
     }
 
     const size_t total = SXI_HEADER_SIZE + len;
-    const size_t sent  = xcp_transport_usb_send(tx_frame, total);
+    const size_t sent  = xcp_transport_usb_send_blocking(tx_frame, total);
 
     if (sent != total) {
         /* Partial write: USB ring buffer was full. We do not retry

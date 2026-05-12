@@ -76,6 +76,26 @@ bool xcp_transport_usb_is_connected(void);
 size_t xcp_transport_usb_send(const uint8_t *data, size_t len);
 
 /**
+ * @brief Send a block of bytes to the host, blocking until done or timeout.
+ *
+ * Repeatedly fills the CDC TX FIFO and services tinyusb until all bytes are
+ * transmitted, the host disconnects, or a 100 ms timeout elapses. This is
+ * intended for callers that need atomic frame transmission (e.g. the SxI
+ * framing layer), where a partial write would leave an unparseable orphan
+ * on the wire.
+ *
+ * This function calls tud_task() internally to drain the FIFO; callers
+ * should expect a worst-case latency on the order of the wire time for
+ * len bytes (about 10 us per byte at USB Full-Speed).
+ *
+ * @param data  Pointer to the bytes to send. Must not be NULL.
+ * @param len   Number of bytes to send.
+ * @return Number of bytes actually transmitted. Equals len on success;
+ *         less than len if the host disconnected or the timeout expired.
+ */
+size_t xcp_transport_usb_send_blocking(const uint8_t *data, size_t len);
+
+/**
  * @brief Receive available bytes from the host.
  *
  * Non-blocking. Reads up to max_len bytes from the CDC RX FIFO into buffer.
