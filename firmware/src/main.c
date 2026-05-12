@@ -55,17 +55,27 @@ static uint8_t loopback_buffer[XCP_MAX_CTO];
 
 static void loopback_step(void)
 {
-    const size_t received = xcp_transport_usb_receive(loopback_buffer,
-                                                      sizeof(loopback_buffer));
-    if (received == 0U) {
+    if (!xcp_transport_sxi_packet_available()) {
         return;
     }
 
-    /* Echo whatever we received. If the TX FIFO can't accept all of it
-     * right now, the unsent tail is dropped for this Milestone; proper
-     * back-pressure handling lands with the SxI framing layer in M2.
+    size_t packet_len = 0U;
+    const xcp_sxi_status_t rx_status =
+        xcp_transport_sxi_get_packet(loopback_buffer,
+                                     sizeof(loopback_buffer),
+                                     &packet_len);
+    if (rx_status != XCP_SXI_OK) {
+        /* Should not happen given the packet_available() check above,
+         * but stay defensive: skip this iteration on any error.
+         */
+        return;
+    }
+
+    /* Echo the payload back as a fresh SxI frame. The transport layer
+     * generates a new CTR for the outgoing frame; the master sees an
+     * independent counter sequence on its receive side.
      */
-    (void)xcp_transport_usb_send(loopback_buffer, received);
+    (void)xcp_transport_sxi_send_packet(loopback_buffer, packet_len);
 }
 
 int main(void)
@@ -86,6 +96,7 @@ int main(void)
      */
     while (true) {
         xcp_transport_usb_task();
+        xcp_transport_sxi_task();
         loopback_step();
         heartbeat_update();
     }
