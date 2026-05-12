@@ -248,19 +248,81 @@ xcp_sxi_status_t xcp_transport_sxi_get_packet(uint8_t *buffer,
                                               size_t max_len,
                                               size_t *actual_len)
 {
-    /* Stub: implementation in stage 2 */
-    (void)buffer;
-    (void)max_len;
-    (void)actual_len;
-    return XCP_SXI_ERR_NO_PACKET;
+    if (buffer == NULL || actual_len == NULL) {
+        return XCP_SXI_ERR_BUFFER_TOO_SMALL;
+    }
+
+    if (rx_state != SXI_STATE_FRAME_READY) {
+        return XCP_SXI_ERR_NO_PACKET;
+    }
+
+    if (max_len < rx_expected_payload_len) {
+        return XCP_SXI_ERR_BUFFER_TOO_SMALL;
+    }
+
+    /* Copy payload only, stripping the 4-byte SxI header. */
+    memcpy(buffer, &rx_buffer[SXI_HEADER_SIZE], rx_expected_payload_len);
+    *actual_len = rx_expected_payload_len;
+
+    stats.frames_received++;
+
+    /* Frame consumed; reset state machine for the next one. */
+    rx_reset();
+
+    return XCP_SXI_OK;
 }
 
 xcp_sxi_status_t xcp_transport_sxi_send_packet(const uint8_t *data, size_t len)
 {
-    /* Stub: implementation in stage 2 */
-    (void)data;
-    (void)len;
-    return XCP_SXI_ERR_NOT_CONNECTED;
+    if (data == NULL && len > 0u) {
+        return XCP_SXI_ERR_PACKET_TOO_LARGE;
+    }
+
+    if (len > XCP_MAX_DTO) {
+        return XCP_SXI_ERR_PACKET_TOO_LARGE;
+    }
+
+    if (!xcp_transport_usb_is_connected()) {
+        return XCP_SXI_ERR_NOT_CONNECTED;
+    }
+
+    /* Assemble the frame in a local buffer so the SxI header and the
+     * payload reach the USB layer as a single write. Splitting the
+     * write would risk a partial frame on the wire if usb_send()
+     * accepted the header but not the payload.
+     */
+    uint8_t tx_frame[XCP_SXI_MAX_FRAME];
+
+    /* LEN (little-endian) */
+    tx_frame[0] = (uint8_t)(len & 0xFFu);
+    tx_frame[1] = (uint8_t)((len >> 8) & 0xFFu);
+
+    /* CTR (little-endian) */
+    tx_frame[2] = (uint8_t)(tx_ctr & 0xFFu);
+    tx_frame[3] = (uint8_t)((tx_ctr >> 8) & 0xFFu);
+
+    /* Payload */
+    if (len > 0u) {
+        memcpy(&tx_frame[SXI_HEADER_SIZE], data, len);
+    }
+
+    const size_t total = SXI_HEADER_SIZE + len;
+    const size_t sent  = xcp_transport_usb_send(tx_frame, total);
+
+    if (sent != total) {
+        /* Partial write: USB ring buffer was full. We do not retry
+         * here; the caller can decide whether to back off or drop.
+         * tx_ctr is NOT incremented so the next call retries with
+         * the same counter value (the master would have detected
+         * the gap anyway).
+         */
+        return XCP_SXI_ERR_NOT_CONNECTED;
+    }
+
+    tx_ctr++;
+    stats.frames_sent++;
+
+    return XCP_SXI_OK;
 }
 
 void xcp_transport_sxi_get_stats(xcp_sxi_stats_t *stats_out)
