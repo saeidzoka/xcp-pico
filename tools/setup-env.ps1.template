@@ -1,0 +1,12 @@
+# Pico build environment setup
+# Copy this file to tools/setup-env.ps1 and adjust the paths for your machine.
+# Do NOT commit setup-env.ps1 (it is listed in .gitignore).
+#
+# Usage (run once per PowerShell session, from the repo root):
+#   . .\tools\setup-env.ps1
+
+$env:PICO_SDK_PATH = "C:\path\to\pico-sdk\2.2.0"
+$env:picotool_DIR  = "C:\path\to\picotool"
+$env:PATH          = "C:\path\to\arm-none-eabi-gcc\bin;$env:PATH"
+
+Write-Host "Pico build environment ready." -ForegroundColor Green

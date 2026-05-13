@@ -67,6 +67,9 @@ JLinkLog.txt
 # Logs
 *.log
 
+# Local environment scripts (contain machine-specific paths)
+tools/setup-env.ps1
+
 # Temporary files
 *.tmp
 *.bak
