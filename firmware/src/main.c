@@ -2,13 +2,9 @@
  * @file    main.c
  * @brief   xcp-pico firmware entry point.
  *
- * Milestone 1 scope: bring up the USB CDC transport and provide a byte-level
- * loopback. Anything sent by the host over the virtual COM port is echoed
- * back. This validates the end-to-end byte stream before any XCP framing or
- * protocol logic is added.
- *
- * Milestone 2 will replace the loopback with SxI framing on top of the same
- * transport API.
+ * Milestone 3 scope: XCP protocol layer on top of the SxI framing layer.
+ * The main loop drives the USB transport, SxI framing, and XCP command
+ * processor. The loopback from Milestone 2 is replaced by the protocol task.
  */
 
 #include <stdint.h>
@@ -19,12 +15,8 @@
 #include "xcp_config.h"
 #include "xcp_transport_usb.h"
 #include "xcp_transport_sxi.h"
+#include "xcp_protocol.h"
 
-/* Heartbeat: blink the on-board LED at ~2 Hz so it's obvious whether the
- * firmware is running or has hung. The interval is checked against the
- * SDK's millisecond clock, not delayed with sleep_ms(), to keep the USB
- * task responsive.
- */
 #define HEARTBEAT_INTERVAL_MS   500U
 
 static void heartbeat_init(void)
@@ -47,60 +39,21 @@ static void heartbeat_update(void)
     }
 }
 
-/* Loopback buffer. Sized to MAX_CTO so it can hold the largest XCP packet
- * we'll deal with in later milestones, even though Milestone 1 only treats
- * the contents as opaque bytes.
- */
-static uint8_t loopback_buffer[XCP_MAX_CTO];
-
-static void loopback_step(void)
-{
-    if (!xcp_transport_sxi_packet_available()) {
-        return;
-    }
-
-    size_t packet_len = 0U;
-    const xcp_sxi_status_t rx_status =
-        xcp_transport_sxi_get_packet(loopback_buffer,
-                                     sizeof(loopback_buffer),
-                                     &packet_len);
-    if (rx_status != XCP_SXI_OK) {
-        /* Should not happen given the packet_available() check above,
-         * but stay defensive: skip this iteration on any error.
-         */
-        return;
-    }
-
-    /* Echo the payload back as a fresh SxI frame. The transport layer
-     * generates a new CTR for the outgoing frame; the master sees an
-     * independent counter sequence on its receive side.
-     */
-    (void)xcp_transport_sxi_send_packet(loopback_buffer, packet_len);
-}
-
 int main(void)
 {
-    /* Bring up the SDK's stdio routing first. With pico_enable_stdio_usb=1
-     * this attaches printf to the USB CDC interface; we'll share the same
-     * interface with the XCP transport for now (see note in
-     * xcp_transport_usb.c).
-     */
     stdio_init_all();
 
     heartbeat_init();
     xcp_transport_usb_init();
     xcp_transport_sxi_init();
+    xcp_protocol_init();
 
-    /* Main loop. tinyusb is cooperative, so xcp_transport_usb_task() must
-     * run frequently. Anything that blocks here will stall USB.
-     */
     while (true) {
         xcp_transport_usb_task();
         xcp_transport_sxi_task();
-        loopback_step();
+        xcp_protocol_task();
         heartbeat_update();
     }
 
-    /* Unreachable. */
     return 0;
 }

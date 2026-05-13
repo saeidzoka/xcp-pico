@@ -38,6 +38,7 @@ add_executable(xcp_pico
     src/main.c
     src/xcp_transport_usb.c
     src/xcp_transport_sxi.c
+    src/xcp_protocol.c
 )
 
 # Public headers shared across modules live in include/.
