@@ -111,19 +111,114 @@ static void handle_unknown(const uint8_t *cmd, size_t cmd_len)
 #define CMD_TABLE_LAST  (XCP_CMD_SHORT_UPLOAD)   /* 0xF4 */
 #define CMD_TABLE_SIZE  (CMD_TABLE_FIRST - CMD_TABLE_LAST + 1u)  /* 12 */
 
+/* DISCONNECT (0xFE) */
+static void handle_disconnect(const uint8_t *cmd, size_t cmd_len)
+{
+    (void)cmd;
+    (void)cmd_len;
+    s_session.connected = false;
+    uint8_t resp[1] = { XCP_PID_POSITIVE_RESPONSE };
+    (void)xcp_transport_sxi_send_packet(resp, sizeof(resp));
+}
+
+/* GET_STATUS (0xFD)
+ *
+ * ASAM MCD-1 XCP V1.5 Part 1, Section 3.4
+ */
+static void handle_get_status(const uint8_t *cmd, size_t cmd_len)
+{
+    (void)cmd;
+    (void)cmd_len;
+    uint8_t resp[6];
+    resp[0] = XCP_PID_POSITIVE_RESPONSE;
+    resp[1] = s_session.session_status;
+    resp[2] = 0x00u;  /* RESOURCE_PROTECTION: nothing locked */
+    resp[3] = 0x00u;  /* reserved */
+    resp[4] = 0x00u;  /* SESSION_CONFIGURATION_ID low */
+    resp[5] = 0x00u;  /* SESSION_CONFIGURATION_ID high */
+    (void)xcp_transport_sxi_send_packet(resp, sizeof(resp));
+}
+
+/* SYNCH (0xFC)
+ *
+ * Always returns ERR_CMD_SYNCH regardless of session state.
+ * The negative response itself signals to the master that the slave
+ * is alive and ready to receive the next command.
+ *
+ * ASAM MCD-1 XCP V1.5 Part 1, Section 3.4
+ */
+static void handle_synch(const uint8_t *cmd, size_t cmd_len)
+{
+    (void)cmd;
+    (void)cmd_len;
+    send_negative_response(XCP_ERR_CMD_SYNCH);
+}
+
+/* GET_COMM_MODE_INFO (0xFB)
+ *
+ * ASAM MCD-1 XCP V1.5 Part 1, Section 3.4
+ */
+static void handle_get_comm_mode_info(const uint8_t *cmd, size_t cmd_len)
+{
+    (void)cmd;
+    (void)cmd_len;
+    uint8_t resp[8];
+    resp[0] = XCP_PID_POSITIVE_RESPONSE;
+    resp[1] = 0x00u;  /* reserved */
+    resp[2] = 0x00u;  /* COMM_MODE_OPTIONAL: no block mode, no interleaved */
+    resp[3] = 0x00u;  /* reserved */
+    resp[4] = 0x00u;  /* MAX_BS */
+    resp[5] = 0x00u;  /* MIN_ST */
+    resp[6] = 0x00u;  /* QUEUE_SIZE */
+    resp[7] = 0x01u;  /* XCP_DRIVER_VERSION */
+    (void)xcp_transport_sxi_send_packet(resp, sizeof(resp));
+}
+
+/* GET_ID (0xFA)
+ *
+ * Returns station identification string inline (Mode bit 0 = 1).
+ * "xcp-pico" is 8 bytes, well within MAX_CTO, so no subsequent
+ * UPLOAD is required by the master.
+ *
+ * Response layout: [PID][Mode][0x00][0x00][LEN_0][LEN_1][LEN_2][LEN_3][string...]
+ *
+ * ASAM MCD-1 XCP V1.5 Part 1, Section 3.5.1
+ */
+static void handle_get_id(const uint8_t *cmd, size_t cmd_len)
+{
+    (void)cmd;
+    (void)cmd_len;
+
+    static const char station_id[] = XCP_STATION_ID;
+    const size_t id_len = sizeof(station_id) - 1u;
+
+    uint8_t resp[8u + 32u];
+    resp[0] = XCP_PID_POSITIVE_RESPONSE;
+    resp[1] = 0x01u;   /* Mode: identification data inline in this response */
+    resp[2] = 0x00u;   /* reserved */
+    resp[3] = 0x00u;   /* reserved */
+    resp[4] = (uint8_t)(id_len & 0xFFu);
+    resp[5] = (uint8_t)((id_len >> 8u)  & 0xFFu);
+    resp[6] = 0x00u;
+    resp[7] = 0x00u;
+    memcpy(&resp[8], station_id, id_len);
+
+    (void)xcp_transport_sxi_send_packet(resp, 8u + id_len);
+}
+
 static const xcp_cmd_handler_t s_cmd_table[CMD_TABLE_SIZE] = {
-    handle_connect,     /* 0xFF CONNECT            index 0  */
-    handle_unknown,     /* 0xFE DISCONNECT         index 1  (stub) */
-    handle_unknown,     /* 0xFD GET_STATUS         index 2  (stub) */
-    handle_unknown,     /* 0xFC SYNCH              index 3  (stub) */
-    handle_unknown,     /* 0xFB GET_COMM_MODE_INFO index 4  (stub) */
-    handle_unknown,     /* 0xFA GET_ID             index 5  (stub) */
-    handle_unknown,     /* 0xF9 (reserved)         index 6  */
-    handle_unknown,     /* 0xF8 (reserved)         index 7  */
-    handle_unknown,     /* 0xF7 (reserved)         index 8  */
-    handle_unknown,     /* 0xF6 SET_MTA            index 9  (stub) */
-    handle_unknown,     /* 0xF5 UPLOAD             index 10 (stub) */
-    handle_unknown,     /* 0xF4 SHORT_UPLOAD       index 11 (stub) */
+    handle_connect,            /* 0xFF CONNECT            index 0  */
+    handle_disconnect,         /* 0xFE DISCONNECT         index 1  */
+    handle_get_status,         /* 0xFD GET_STATUS         index 2  */
+    handle_synch,              /* 0xFC SYNCH              index 3  */
+    handle_get_comm_mode_info, /* 0xFB GET_COMM_MODE_INFO index 4  */
+    handle_get_id,             /* 0xFA GET_ID             index 5  */
+    handle_unknown,            /* 0xF9 (reserved)         index 6  */
+    handle_unknown,            /* 0xF8 (reserved)         index 7  */
+    handle_unknown,            /* 0xF7 (reserved)         index 8  */
+    handle_unknown,            /* 0xF6 SET_MTA            index 9  (stub) */
+    handle_unknown,            /* 0xF5 UPLOAD             index 10 (stub) */
+    handle_unknown,            /* 0xF4 SHORT_UPLOAD       index 11 (stub) */
 };
 
 /* -------------------------------------------------------------------------
