@@ -206,6 +206,92 @@ static void handle_get_id(const uint8_t *cmd, size_t cmd_len)
     (void)xcp_transport_sxi_send_packet(resp, 8u + id_len);
 }
 
+/* -------------------------------------------------------------------------
+ * Memory access policy: SRAM only (RP2350)
+ * ------------------------------------------------------------------------- */
+#define SRAM_BASE   (0x20000000u)
+#define SRAM_END    (0x20082000u)  /* 520 KB */
+
+static bool is_valid_ram_region(uint32_t addr, uint8_t num_bytes)
+{
+    return (addr >= SRAM_BASE) &&
+           (num_bytes > 0u) &&
+           ((addr + (uint32_t)num_bytes) <= SRAM_END);
+}
+
+/* SET_MTA (0xF6)
+ *
+ * Request:  [0xF6][0x00][0x00][addr_ext][addr_0][addr_1][addr_2][addr_3]
+ * Response: [0xFF]
+ *
+ * ASAM MCD-1 XCP V1.5 Part 1, Section 3.6
+ */
+static void handle_set_mta(const uint8_t *cmd, size_t cmd_len)
+{
+    (void)cmd_len;
+    s_session.mta_extension = cmd[3];
+    s_session.mta_address   = read_u32_le(cmd, 4u);
+
+    uint8_t resp[1] = { XCP_PID_POSITIVE_RESPONSE };
+    (void)xcp_transport_sxi_send_packet(resp, sizeof(resp));
+}
+
+/* UPLOAD (0xF5)
+ *
+ * Reads num_bytes from the current MTA address. Advances MTA by num_bytes.
+ * Access restricted to SRAM only.
+ *
+ * Request:  [0xF5][num_bytes]
+ * Response: [0xFF][data...]
+ *
+ * ASAM MCD-1 XCP V1.5 Part 1, Section 3.6
+ */
+static void handle_upload(const uint8_t *cmd, size_t cmd_len)
+{
+    (void)cmd_len;
+    const uint8_t num_bytes = cmd[1];
+
+    if (!is_valid_ram_region(s_session.mta_address, num_bytes)) {
+        send_negative_response(XCP_ERR_OUT_OF_RANGE);
+        return;
+    }
+
+    uint8_t resp[1u + XCP_MAX_DTO];
+    resp[0] = XCP_PID_POSITIVE_RESPONSE;
+    memcpy(&resp[1], (const void *)s_session.mta_address, num_bytes);
+    s_session.mta_address += (uint32_t)num_bytes;
+
+    (void)xcp_transport_sxi_send_packet(resp, 1u + num_bytes);
+}
+
+/* SHORT_UPLOAD (0xF4)
+ *
+ * Reads num_bytes from the address given in the command. Does NOT modify MTA.
+ * Access restricted to SRAM only.
+ *
+ * Request:  [0xF4][num_bytes][0x00][addr_ext][addr_0][addr_1][addr_2][addr_3]
+ * Response: [0xFF][data...]
+ *
+ * ASAM MCD-1 XCP V1.5 Part 1, Section 3.6
+ */
+static void handle_short_upload(const uint8_t *cmd, size_t cmd_len)
+{
+    (void)cmd_len;
+    const uint8_t  num_bytes = cmd[1];
+    const uint32_t address   = read_u32_le(cmd, 4u);
+
+    if (!is_valid_ram_region(address, num_bytes)) {
+        send_negative_response(XCP_ERR_OUT_OF_RANGE);
+        return;
+    }
+
+    uint8_t resp[1u + XCP_MAX_DTO];
+    resp[0] = XCP_PID_POSITIVE_RESPONSE;
+    memcpy(&resp[1], (const void *)address, num_bytes);
+
+    (void)xcp_transport_sxi_send_packet(resp, 1u + num_bytes);
+}
+
 static const xcp_cmd_handler_t s_cmd_table[CMD_TABLE_SIZE] = {
     handle_connect,            /* 0xFF CONNECT            index 0  */
     handle_disconnect,         /* 0xFE DISCONNECT         index 1  */
@@ -216,11 +302,10 @@ static const xcp_cmd_handler_t s_cmd_table[CMD_TABLE_SIZE] = {
     handle_unknown,            /* 0xF9 (reserved)         index 6  */
     handle_unknown,            /* 0xF8 (reserved)         index 7  */
     handle_unknown,            /* 0xF7 (reserved)         index 8  */
-    handle_unknown,            /* 0xF6 SET_MTA            index 9  (stub) */
-    handle_unknown,            /* 0xF5 UPLOAD             index 10 (stub) */
-    handle_unknown,            /* 0xF4 SHORT_UPLOAD       index 11 (stub) */
+    handle_set_mta,            /* 0xF6 SET_MTA            index 9  */
+    handle_upload,             /* 0xF5 UPLOAD             index 10 */
+    handle_short_upload,       /* 0xF4 SHORT_UPLOAD       index 11 */
 };
-
 /* -------------------------------------------------------------------------
  * Public API
  * ------------------------------------------------------------------------- */

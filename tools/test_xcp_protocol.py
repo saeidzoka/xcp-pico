@@ -14,6 +14,9 @@ PORT    = sys.argv[1] if len(sys.argv) > 1 else "COM15"
 BAUD    = 115200
 TIMEOUT = 2.0
 
+SRAM_BASE = 0x20000000  # RP2350 SRAM start, always valid
+FLASH_BASE = 0x10000000  # Flash, outside allowed region
+
 PASS = "\033[32mPASS\033[0m"
 FAIL = "\033[31mFAIL\033[0m"
 
@@ -145,6 +148,92 @@ def test_get_id():
     check("ID length == 8",                  id_len == 8,      f"got {id_len}")
     station_id = resp[8:8 + id_len].decode("ascii", errors="replace")
     check("station ID == 'xcp-pico'",        station_id == "xcp-pico", f"got '{station_id}'")
+    
+    
+def test_set_mta():
+    print("\nTest: SET_MTA (0xF6)")
+    with open_port() as ser:
+        time.sleep(0.1)
+        addr = SRAM_BASE
+        cmd = bytes([
+            0xF6, 0x00, 0x00, 0x00,
+            (addr >> 0)  & 0xFF,
+            (addr >> 8)  & 0xFF,
+            (addr >> 16) & 0xFF,
+            (addr >> 24) & 0xFF,
+        ])
+        resp = send_and_receive(ser, cmd)
+
+    check("response length == 1",            len(resp) == 1,  f"got {len(resp)}")
+    if len(resp) < 1:
+        return
+    check("PID == 0xFF (positive response)", resp[0] == 0xFF, f"got 0x{resp[0]:02X}")
+
+
+def test_upload():
+    print("\nTest: UPLOAD (0xF5)")
+    num_bytes = 4
+    with open_port() as ser:
+        time.sleep(0.1)
+        # SET_MTA first
+        addr = SRAM_BASE
+        set_mta_cmd = bytes([
+            0xF6, 0x00, 0x00, 0x00,
+            (addr >> 0)  & 0xFF,
+            (addr >> 8)  & 0xFF,
+            (addr >> 16) & 0xFF,
+            (addr >> 24) & 0xFF,
+        ])
+        send_and_receive(ser, set_mta_cmd)
+        # Then UPLOAD
+        resp = send_and_receive(ser, bytes([0xF5, num_bytes]))
+
+    check("response length == 5",            len(resp) == 1 + num_bytes, f"got {len(resp)}")
+    if len(resp) < 1:
+        return
+    check("PID == 0xFF (positive response)", resp[0] == 0xFF, f"got 0x{resp[0]:02X}")
+
+
+def test_short_upload():
+    print("\nTest: SHORT_UPLOAD (0xF4)")
+    num_bytes = 4
+    with open_port() as ser:
+        time.sleep(0.1)
+        addr = SRAM_BASE
+        cmd = bytes([
+            0xF4, num_bytes, 0x00, 0x00,
+            (addr >> 0)  & 0xFF,
+            (addr >> 8)  & 0xFF,
+            (addr >> 16) & 0xFF,
+            (addr >> 24) & 0xFF,
+        ])
+        resp = send_and_receive(ser, cmd)
+
+    check("response length == 5",            len(resp) == 1 + num_bytes, f"got {len(resp)}")
+    if len(resp) < 1:
+        return
+    check("PID == 0xFF (positive response)", resp[0] == 0xFF, f"got 0x{resp[0]:02X}")
+
+
+def test_short_upload_out_of_range():
+    print("\nTest: SHORT_UPLOAD out-of-range address")
+    with open_port() as ser:
+        time.sleep(0.1)
+        addr = FLASH_BASE
+        cmd = bytes([
+            0xF4, 0x04, 0x00, 0x00,
+            (addr >> 0)  & 0xFF,
+            (addr >> 8)  & 0xFF,
+            (addr >> 16) & 0xFF,
+            (addr >> 24) & 0xFF,
+        ])
+        resp = send_and_receive(ser, cmd)
+
+    check("response length == 2",            len(resp) == 2,   f"got {len(resp)}")
+    if len(resp) < 2:
+        return
+    check("PID == 0xFE (negative response)", resp[0] == 0xFE,  f"got 0x{resp[0]:02X}")
+    check("ERR == 0x22 (ERR_OUT_OF_RANGE)",  resp[1] == 0x22,  f"got 0x{resp[1]:02X}")
 # -------------------------------------------------------------------------
 
 print(f"XCP Protocol Tests on {PORT}")
@@ -156,6 +245,10 @@ test_get_status()
 test_synch()
 test_get_comm_mode_info()
 test_get_id()
+test_set_mta()
+test_upload()
+test_short_upload()
+test_short_upload_out_of_range()
 test_unknown_command()
 
 total  = len(results)
