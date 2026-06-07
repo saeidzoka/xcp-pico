@@ -20,6 +20,7 @@
 #include "xcp_config.h"
 #include "xcp_transport.h"
 #include "xcp_protocol.h"
+#include "mpu6050.h"
 
 /* -------------------------------------------------------------------------
  * Transport selection and vtable registration
@@ -49,9 +50,9 @@ static bool sxi_send_packet(const uint8_t *data, size_t len)
 
 static const xcp_transport_ops_t s_transport_ops = {
     .packet_available = xcp_transport_sxi_packet_available,
-    .get_packet       = sxi_get_packet,
-    .send_packet      = sxi_send_packet,
-    .is_connected     = xcp_transport_usb_is_connected,
+    .get_packet = sxi_get_packet,
+    .send_packet = sxi_send_packet,
+    .is_connected = xcp_transport_usb_is_connected,
 };
 
 #elif XCP_TRANSPORT_CAN
@@ -60,9 +61,9 @@ static const xcp_transport_ops_t s_transport_ops = {
 
 static const xcp_transport_ops_t s_transport_ops = {
     .packet_available = xcp_transport_can_packet_available,
-    .get_packet       = xcp_transport_can_get_packet,
-    .send_packet      = xcp_transport_can_send_packet,
-    .is_connected     = xcp_transport_can_is_connected,
+    .get_packet = xcp_transport_can_get_packet,
+    .send_packet = xcp_transport_can_send_packet,
+    .is_connected = xcp_transport_can_is_connected,
 };
 
 #endif /* XCP_TRANSPORT_* */
@@ -71,7 +72,7 @@ static const xcp_transport_ops_t s_transport_ops = {
  * Heartbeat
  * ------------------------------------------------------------------------- */
 
-#define HEARTBEAT_INTERVAL_MS   500U
+#define HEARTBEAT_INTERVAL_MS 500U
 
 static void heartbeat_init(void)
 {
@@ -86,7 +87,8 @@ static void heartbeat_update(void)
 
     const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
 
-    if ((now_ms - last_toggle_ms) >= HEARTBEAT_INTERVAL_MS) {
+    if ((now_ms - last_toggle_ms) >= HEARTBEAT_INTERVAL_MS)
+    {
         led_state = !led_state;
         gpio_put(PICO_DEFAULT_LED_PIN, led_state);
         last_toggle_ms = now_ms;
@@ -112,7 +114,18 @@ int main(void)
 
     xcp_protocol_init(&s_transport_ops);
 
-    while (true) {
+    if (!mpu6050_init())
+    {
+        while (true)
+        {
+            gpio_put(PICO_DEFAULT_LED_PIN, 1);
+            sleep_ms(100);
+            gpio_put(PICO_DEFAULT_LED_PIN, 0);
+            sleep_ms(100);
+        }
+    }
+    while (true)
+    {
 #if XCP_TRANSPORT_USB_CDC
         xcp_transport_usb_task();
         xcp_transport_sxi_task();
@@ -120,6 +133,7 @@ int main(void)
         xcp_transport_can_task();
 #endif
         xcp_protocol_task();
+        mpu6050_task();
         heartbeat_update();
     }
 
