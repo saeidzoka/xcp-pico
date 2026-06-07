@@ -61,7 +61,7 @@ The protocol layer above the transport is **completely unaware** that the underl
 
 ### Neutral
 
-- The Phase 2 CAN transport will not use SxI framing. CAN has its own XCP binding (`XCP on CAN`) which uses CAN frames directly. This means the transport layer interface has to be designed carefully so that both SxI and CAN bindings can fit behind the same abstraction. This is a follow-up concern for the transport layer module design, not a problem with this decision.
+- The Phase 2 CAN transport will not use SxI framing. CAN has its own XCP binding (`XCP on CAN`) which uses CAN frames directly. This means the transport layer interface has to be designed carefully so that both SxI and CAN bindings can fit behind the same abstraction. This is a follow-up concern for the transport layer module design, not a problem with this decision.→ Resolved by ADR-002.
 
 ## Alternatives considered
 

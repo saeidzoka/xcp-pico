@@ -4,9 +4,14 @@
  */
 
 #include "xcp_protocol.h"
-#include "xcp_transport_sxi.h"
 #include "xcp_config.h"
 #include <string.h>
+
+/* -------------------------------------------------------------------------
+ * Transport interface
+ * ------------------------------------------------------------------------- */
+ 
+static const xcp_transport_ops_t *s_transport;
 
 /* -------------------------------------------------------------------------
  * Session State
@@ -41,7 +46,7 @@ static inline uint32_t read_u32_le(const uint8_t *buf, size_t offset)
 static void send_positive_response(uint8_t *resp, size_t len)
 {
     resp[0] = XCP_PID_POSITIVE_RESPONSE;
-    (void)xcp_transport_sxi_send_packet(resp, len);
+    (void)s_transport->send_packet(resp, len);
 }
 
 static void send_negative_response(uint8_t err_code)
@@ -49,7 +54,7 @@ static void send_negative_response(uint8_t err_code)
     uint8_t resp[2];
     resp[0] = XCP_PID_NEGATIVE_RESPONSE;
     resp[1] = err_code;
-    (void)xcp_transport_sxi_send_packet(resp, sizeof(resp));
+    (void)s_transport->send_packet(resp, sizeof(resp));
 }
 
 /* -------------------------------------------------------------------------
@@ -89,7 +94,7 @@ static void handle_connect(const uint8_t *cmd, size_t cmd_len)
     s_session.connected      = true;
     s_session.session_status = 0x00u;
 
-    (void)xcp_transport_sxi_send_packet(resp, sizeof(resp));
+    (void)s_transport->send_packet(resp, sizeof(resp));
 }
 
 static void handle_unknown(const uint8_t *cmd, size_t cmd_len)
@@ -118,7 +123,7 @@ static void handle_disconnect(const uint8_t *cmd, size_t cmd_len)
     (void)cmd_len;
     s_session.connected = false;
     uint8_t resp[1] = { XCP_PID_POSITIVE_RESPONSE };
-    (void)xcp_transport_sxi_send_packet(resp, sizeof(resp));
+    (void)s_transport->send_packet(resp, sizeof(resp));
 }
 
 /* GET_STATUS (0xFD)
@@ -136,7 +141,7 @@ static void handle_get_status(const uint8_t *cmd, size_t cmd_len)
     resp[3] = 0x00u;  /* reserved */
     resp[4] = 0x00u;  /* SESSION_CONFIGURATION_ID low */
     resp[5] = 0x00u;  /* SESSION_CONFIGURATION_ID high */
-    (void)xcp_transport_sxi_send_packet(resp, sizeof(resp));
+    (void)s_transport->send_packet(resp, sizeof(resp));
 }
 
 /* SYNCH (0xFC)
@@ -171,7 +176,7 @@ static void handle_get_comm_mode_info(const uint8_t *cmd, size_t cmd_len)
     resp[5] = 0x00u;  /* MIN_ST */
     resp[6] = 0x00u;  /* QUEUE_SIZE */
     resp[7] = 0x01u;  /* XCP_DRIVER_VERSION */
-    (void)xcp_transport_sxi_send_packet(resp, sizeof(resp));
+    (void)s_transport->send_packet(resp, sizeof(resp));
 }
 
 /* GET_ID (0xFA)
@@ -203,7 +208,7 @@ static void handle_get_id(const uint8_t *cmd, size_t cmd_len)
     resp[7] = 0x00u;
     memcpy(&resp[8], station_id, id_len);
 
-    (void)xcp_transport_sxi_send_packet(resp, 8u + id_len);
+    (void)s_transport->send_packet(resp, 8u + id_len);
 }
 
 /* -------------------------------------------------------------------------
@@ -233,7 +238,7 @@ static void handle_set_mta(const uint8_t *cmd, size_t cmd_len)
     s_session.mta_address   = read_u32_le(cmd, 4u);
 
     uint8_t resp[1] = { XCP_PID_POSITIVE_RESPONSE };
-    (void)xcp_transport_sxi_send_packet(resp, sizeof(resp));
+    (void)s_transport->send_packet(resp, sizeof(resp));
 }
 
 /* UPLOAD (0xF5)
@@ -261,7 +266,7 @@ static void handle_upload(const uint8_t *cmd, size_t cmd_len)
     memcpy(&resp[1], (const void *)s_session.mta_address, num_bytes);
     s_session.mta_address += (uint32_t)num_bytes;
 
-    (void)xcp_transport_sxi_send_packet(resp, 1u + num_bytes);
+    (void)s_transport->send_packet(resp, 1u + num_bytes);
 }
 
 /* SHORT_UPLOAD (0xF4)
@@ -289,7 +294,7 @@ static void handle_short_upload(const uint8_t *cmd, size_t cmd_len)
     resp[0] = XCP_PID_POSITIVE_RESPONSE;
     memcpy(&resp[1], (const void *)address, num_bytes);
 
-    (void)xcp_transport_sxi_send_packet(resp, 1u + num_bytes);
+    (void)s_transport->send_packet(resp, 1u + num_bytes);
 }
 
 static const xcp_cmd_handler_t s_cmd_table[CMD_TABLE_SIZE] = {
@@ -310,34 +315,33 @@ static const xcp_cmd_handler_t s_cmd_table[CMD_TABLE_SIZE] = {
  * Public API
  * ------------------------------------------------------------------------- */
 
-void xcp_protocol_init(void)
+void xcp_protocol_init(const xcp_transport_ops_t *ops)
 {
+    s_transport = ops;
     memset(&s_session, 0, sizeof(s_session));
 }
 
 void xcp_protocol_task(void)
 {
-    if (!xcp_transport_sxi_packet_available()) {
+    if (!s_transport->packet_available()) {
         return;
     }
-
+ 
     static uint8_t s_cmd_buf[XCP_MAX_CTO];
     size_t cmd_len = 0u;
-
-    const xcp_sxi_status_t status =
-        xcp_transport_sxi_get_packet(s_cmd_buf, sizeof(s_cmd_buf), &cmd_len);
-
-    if (status != XCP_SXI_OK || cmd_len == 0u) {
+ 
+    if (!s_transport->get_packet(s_cmd_buf, sizeof(s_cmd_buf), &cmd_len) ||
+        cmd_len == 0u) {
         return;
     }
-
+ 
     const uint8_t cmd_code = s_cmd_buf[0];
-
+ 
     if (cmd_code < CMD_TABLE_LAST) {
         send_negative_response(XCP_ERR_CMD_UNKNOWN);
         return;
     }
-
+ 
     const uint8_t index = CMD_TABLE_FIRST - cmd_code;
     s_cmd_table[index](s_cmd_buf, cmd_len);
 }

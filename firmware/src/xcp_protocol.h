@@ -29,6 +29,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "xcp_transport.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -68,10 +70,14 @@ extern "C" {
 /**
  * @brief Initialise the XCP protocol layer.
  *
- * Resets session state to disconnected. Must be called once after
- * xcp_transport_sxi_init().
+ * Stores the transport interface pointer and resets session state to
+ * disconnected. Must be called once at startup, after the chosen transport
+ * has been initialised.
+ *
+ * @param[in]  ops  Pointer to a fully-populated transport ops struct.
+ *                  Must remain valid for the lifetime of the application.
  */
-void xcp_protocol_init(void);
+void xcp_protocol_init(const xcp_transport_ops_t *ops);
 
 /**
  * @brief Process pending XCP commands.
