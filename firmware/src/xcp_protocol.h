@@ -47,6 +47,7 @@ extern "C" {
 #define XCP_CMD_SET_MTA             (0xF6u)
 #define XCP_CMD_UPLOAD              (0xF5u)
 #define XCP_CMD_SHORT_UPLOAD        (0xF4u)
+#define XCP_CMD_DOWNLOAD            (0xF0u)
 
 /* -------------------------------------------------------------------------
  * XCP Response Packet Identification Bytes (ASAM MCD-1 XCP V1.5, Part 1, Section 3.3)

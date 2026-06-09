@@ -113,7 +113,7 @@ static void handle_unknown(const uint8_t *cmd, size_t cmd_len)
  * ASAM MCD-1 XCP V1.5 Part 1, Table 3
  * ------------------------------------------------------------------------- */
 #define CMD_TABLE_FIRST (0xFFu)
-#define CMD_TABLE_LAST  (XCP_CMD_SHORT_UPLOAD)   /* 0xF4 */
+#define CMD_TABLE_LAST  (XCP_CMD_DOWNLOAD)   /* 0xF0 */
 #define CMD_TABLE_SIZE  (CMD_TABLE_FIRST - CMD_TABLE_LAST + 1u)  /* 12 */
 
 /* DISCONNECT (0xFE) */
@@ -297,6 +297,38 @@ static void handle_short_upload(const uint8_t *cmd, size_t cmd_len)
     (void)s_transport->send_packet(resp, 1u + num_bytes);
 }
 
+/* DOWNLOAD (0xF0)
+ *
+ * Writes num_bytes to the current MTA address. Advances MTA by num_bytes.
+ * Access restricted to SRAM only. Byte granularity (AG=1): no alignment
+ * bytes between SIZE and data fields.
+ *
+ * Request:  [0xF0][num_bytes][data_0][data_1]...[data_n]
+ * Response: [0xFF]
+ *
+ * ASAM MCD-1 XCP V1.5 Part 1, Section 3.6
+ */
+static void handle_download(const uint8_t *cmd, size_t cmd_len)
+{
+    const uint8_t num_bytes = cmd[1];
+ 
+    if (num_bytes == 0u || cmd_len < (size_t)(2u + (size_t)num_bytes)) {
+        send_negative_response(XCP_ERR_OUT_OF_RANGE);
+        return;
+    }
+ 
+    if (!is_valid_ram_region(s_session.mta_address, num_bytes)) {
+        send_negative_response(XCP_ERR_OUT_OF_RANGE);
+        return;
+    }
+ 
+    memcpy((void *)s_session.mta_address, &cmd[2], num_bytes);
+    s_session.mta_address += (uint32_t)num_bytes;
+ 
+    uint8_t resp[1] = { XCP_PID_POSITIVE_RESPONSE };
+    (void)s_transport->send_packet(resp, sizeof(resp));
+}
+
 static const xcp_cmd_handler_t s_cmd_table[CMD_TABLE_SIZE] = {
     handle_connect,            /* 0xFF CONNECT            index 0  */
     handle_disconnect,         /* 0xFE DISCONNECT         index 1  */
@@ -310,6 +342,10 @@ static const xcp_cmd_handler_t s_cmd_table[CMD_TABLE_SIZE] = {
     handle_set_mta,            /* 0xF6 SET_MTA            index 9  */
     handle_upload,             /* 0xF5 UPLOAD             index 10 */
     handle_short_upload,       /* 0xF4 SHORT_UPLOAD       index 11 */
+    handle_unknown,            /* 0xF3 BUILD_CHECKSUM     index 12 */
+    handle_unknown,            /* 0xF2 TRANSPORT_LAYER    index 13 */
+    handle_unknown,            /* 0xF1 USER_CMD           index 14 */
+    handle_download,           /* 0xF0 DOWNLOAD           index 15 */
 };
 /* -------------------------------------------------------------------------
  * Public API
