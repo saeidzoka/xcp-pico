@@ -68,7 +68,7 @@ def test_unknown_command():
     print("\nTest: unknown command returns ERR_CMD_UNKNOWN")
     with open_port() as ser:
         time.sleep(0.1)
-        resp = send_and_receive(ser, bytes([0xF0]))  # unimplemented
+        resp = send_and_receive(ser, bytes([0xE0]))  # unimplemented
 
     check("response length == 2",             len(resp) == 2,   f"got {len(resp)}")
     if len(resp) < 2:

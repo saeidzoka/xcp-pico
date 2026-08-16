@@ -5,6 +5,7 @@
 
 #include "xcp_protocol.h"
 #include "xcp_config.h"
+#include "xcp_platform.h"
 #include <string.h>
 
 /* -------------------------------------------------------------------------
@@ -214,14 +215,11 @@ static void handle_get_id(const uint8_t *cmd, size_t cmd_len)
 /* -------------------------------------------------------------------------
  * Memory access policy: SRAM only (RP2350)
  * ------------------------------------------------------------------------- */
-#define SRAM_BASE   (0x20000000u)
-#define SRAM_END    (0x20082000u)  /* 520 KB */
-
 static bool is_valid_ram_region(uint32_t addr, uint8_t num_bytes)
 {
-    return (addr >= SRAM_BASE) &&
+    return (addr >= XCP_PLATFORM_RAM_BASE) &&
            (num_bytes > 0u) &&
-           ((addr + (uint32_t)num_bytes) <= SRAM_END);
+           ((addr + (uint32_t)num_bytes) <= XCP_PLATFORM_RAM_END);
 }
 
 /* SET_MTA (0xF6)
