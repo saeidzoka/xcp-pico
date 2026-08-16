@@ -40,6 +40,7 @@ add_executable(xcp_pico
     src/xcp_transport_sxi.c
     src/xcp_protocol.c
     src/mpu6050.c
+    src/servo.c
 )
 
 # Public headers shared across modules live in include/.
@@ -54,6 +55,7 @@ target_include_directories(xcp_pico PRIVATE
 target_link_libraries(xcp_pico PRIVATE
     pico_stdlib
     hardware_i2c
+    hardware_pwm
 )
 
 # ----------------------------------------------------------------------------

@@ -20,7 +20,9 @@
 #include "xcp_config.h"
 #include "xcp_transport.h"
 #include "xcp_protocol.h"
+#include "xcp_app.h"
 #include "mpu6050.h"
+#include "servo.h"
 
 /* -------------------------------------------------------------------------
  * Transport selection and vtable registration
@@ -124,8 +126,11 @@ int main(void)
             sleep_ms(100);
         }
     }
+    servo_init();
+
     while (true)
     {
+        servo_set_angle(c_servo_angle);
 #if XCP_TRANSPORT_USB_CDC
         xcp_transport_usb_task();
         xcp_transport_sxi_task();

@@ -58,6 +58,16 @@ extern volatile float g_pitch_deg;
 extern volatile float c_alpha;
 
 /* -------------------------------------------------------------------------
+ * Servo calibration parameters (read/write)
+ * Defined in: servo.c
+ * ------------------------------------------------------------------------- */
+
+/** Commanded servo angle in degrees. Range: [-90, +90].
+ *  Writable via XCP DOWNLOAD for manual positioning and PID testing.
+ */
+extern volatile float c_servo_angle;
+
+/* -------------------------------------------------------------------------
  * PID controller (Phase 2 - reserved)
  * Defined in: pid.c (not yet implemented)
  * ------------------------------------------------------------------------- */
