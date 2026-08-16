@@ -1,29 +1,40 @@
 /**
  * @file    pid.h
- * @brief   PID controller for xcp-pico (Milestone 6, v1: textbook form).
+ * @brief   PID controller for xcp-pico (Milestone 6, v2: anti-windup).
  *
- * Implements a standard discrete-time PID controller:
+ * Implements a discrete-time PID controller with integral clamping:
  *
- *   error  = setpoint - measurement
- *   P      = Kp * error
- *   I      = I + Ki * error * dt
- *   D      = Kd * (error - prev_error) / dt
- *   output = P + I + D
+ *   error    = setpoint - measurement
+ *   P        = Kp * error
+ *   integral = clamp(integral + error * dt, -INTEGRAL_LIMIT_DEG, +INTEGRAL_LIMIT_DEG)
+ *   I        = Ki * integral
+ *   D        = Kd * (error - prev_error) / dt
+ *   output   = P + I + D
  *
  * All gains and the setpoint are exposed as volatile float in xcp_app.h
  * and writable live via XCP DOWNLOAD.
  *
- * KNOWN LIMITATION (intentional, this commit only):
- * This version has no integral anti-windup. If error remains large for
- * an extended period (e.g. because the actuator cannot physically reach
- * the setpoint), the integral term grows without bound and causes severe
- * overshoot on recovery. Anti-windup (integral clamping) is added in a
- * following commit. The downstream actuator (servo_set_angle) clamps its
- * input to [-90, +90] regardless, so this limitation cannot damage
- * hardware, only degrade transient response.
+ * ANTI-WINDUP (this commit):
+ * The integral accumulator is clamped to +-INTEGRAL_LIMIT_DEG (90 deg,
+ * matching the servo's physical travel limit). This prevents the integral
+ * term from growing without bound while the actuator cannot reach the
+ * setpoint, which previously caused severe overshoot on recovery. Clamping
+ * the accumulator itself (rather than the resulting I term) means changing
+ * Ki live via XCP does not cause a discontinuous jump in output, since the
+ * stored integral value stays bounded independent of the gain applied to it.
  *
- * Refs: standard discrete PID form, e.g. Astrom & Hagglund,
- * "PID Controllers: Theory, Design, and Tuning", 2nd ed., Ch. 2.
+ * KNOWN LIMITATION (intentional, addressed in a following commit):
+ * The derivative term is still computed on the error signal:
+ *   D = Kd * (error - prev_error) / dt
+ * A step change in c_setpoint therefore causes a step change in error,
+ * which produces a large instantaneous spike in the D term ("derivative
+ * kick"). Derivative-on-measurement, which computes D from the negative
+ * rate of change of the measurement instead of the error, eliminates this
+ * and is the subject of the next commit.
+ *
+ * Refs: standard discrete PID form with integral clamping, e.g.
+ * Astrom & Hagglund, "PID Controllers: Theory, Design, and Tuning",
+ * 2nd ed., Ch. 2 and Ch. 6 (windup).
  */
 
 #ifndef PID_H

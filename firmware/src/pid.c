@@ -1,10 +1,19 @@
 /**
  * @file    pid.c
- * @brief   PID controller implementation (Milestone 6, v1: textbook form).
+ * @brief   PID controller implementation (Milestone 6, v2: anti-windup).
  */
 
 #include "pid.h"
 #include "xcp_app.h"
+
+/* -------------------------------------------------------------------------
+ * Anti-windup limit
+ *
+ * The integral accumulator is clamped to +-90 deg, matching the servo's
+ * physical travel limit (servo_set_angle clamps its input to the same
+ * range). See pid.h "ANTI-WINDUP" note.
+ * ------------------------------------------------------------------------- */
+#define INTEGRAL_LIMIT_DEG   90.0f
 
 /* -------------------------------------------------------------------------
  * XCP-visible variable definitions
@@ -48,11 +57,20 @@ float pid_update(float measurement, float dt_s)
 
     const float p_term = c_Kp * error;
 
-    /* No anti-windup yet: integral accumulates without bound.
-     * See pid.h "KNOWN LIMITATION" note. */
+    /* Anti-windup: clamp the accumulator itself, not the resulting I term.
+     * See pid.h "ANTI-WINDUP" note for rationale. */
     s_integral += error * dt_s;
+
+    if (s_integral > INTEGRAL_LIMIT_DEG) {
+        s_integral = INTEGRAL_LIMIT_DEG;
+    } else if (s_integral < -INTEGRAL_LIMIT_DEG) {
+        s_integral = -INTEGRAL_LIMIT_DEG;
+    }
+
     const float i_term = c_Ki * s_integral;
 
+    /* Derivative-on-error (still has derivative kick on setpoint steps;
+     * see pid.h "KNOWN LIMITATION" note, addressed in a following commit). */
     const float d_term = c_Kd * (error - s_prev_error) / dt_s;
     s_prev_error = error;
 
