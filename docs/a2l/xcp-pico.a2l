@@ -1,0 +1,236 @@
+ASAP2_VERSION 1 61
+
+/begin PROJECT xcp_pico "xcp-pico: open-source XCP slave for Raspberry Pi Pico 2"
+
+  /begin MODULE xcp_pico "xcp-pico firmware description"
+
+    /begin MOD_COMMON "Byte order and addressing granularity for this ECU"
+      BYTE_ORDER MSB_LAST
+      ALIGNMENT_BYTE 1
+      ALIGNMENT_WORD 2
+      ALIGNMENT_LONG 4
+      ALIGNMENT_FLOAT32_IEEE 4
+    /end MOD_COMMON
+
+    /* -----------------------------------------------------------------
+     * Communication parameters
+     *
+     * NOTE: xcp-pico does not use a standard ASAM transport binding.
+     * Per ADR-001, the transport is XCP-on-SxI framing carried over a
+     * USB CDC byte stream, chosen because "XCP on USB" as defined by
+     * ASAM has no practical significance and no commercial master
+     * implements it. There is therefore no standard XCP_ON_USB or
+     * XCP_ON_SXI IF_DATA keyword that a commercial master (CANape,
+     * INCA) can consume to auto-configure the connection.
+     *
+     * PROTOCOL_LAYER below describes the protocol-level parameters
+     * (timeouts, MAX_CTO/MAX_DTO, addressing) that ARE transport-
+     * independent and match the values returned by this slave's
+     * CONNECT response (see xcp_protocol.c handle_connect()).
+     *
+     * Connecting to this slave requires the project's own PC tool
+     * (tools/*.py), which implements SxI framing directly, rather
+     * than a commercial XCP master.
+     * ----------------------------------------------------------------- */
+    /begin IF_DATA XCP
+      /begin PROTOCOL_LAYER
+        0x0104          /* XCP protocol layer version 1.4 */
+        1000            /* T1 [ms]: command timeout */
+        2000            /* T2 [ms]: connect response timeout */
+        0               /* T3 [ms]: unused for this slave */
+        0               /* T4 [ms]: unused for this slave */
+        0               /* T5 [ms]: unused for this slave */
+        0               /* T6 [ms]: unused for this slave */
+        0               /* T7 [ms]: unused for this slave */
+        64              /* MAX_CTO: matches XCP_MAX_CTO in xcp_config.h */
+        64              /* MAX_DTO: matches XCP_MAX_DTO in xcp_config.h */
+        BYTE_ORDER_MSB_LAST
+        ADDRESS_GRANULARITY_BYTE
+        OPTIONAL_CMD GET_COMM_MODE_INFO
+        OPTIONAL_CMD GET_ID
+      /end PROTOCOL_LAYER
+    /end IF_DATA
+
+    /* -----------------------------------------------------------------
+     * Conversion rules
+     * ----------------------------------------------------------------- */
+    /begin COMPU_METHOD CM_IDENTITY
+      "Direct physical value, no conversion"
+      RAT_FUNC
+      "%6.3"
+      ""
+      COEFFS 0 1 0 0 0 1
+    /end COMPU_METHOD
+
+    /* -----------------------------------------------------------------
+     * Record layout for scalar FLOAT32 characteristics
+     * ----------------------------------------------------------------- */
+    /begin RECORD_LAYOUT RL_FLOAT32
+      FNC_VALUES 1 FLOAT32_IEEE ROW_DIR DIRECT
+    /end RECORD_LAYOUT
+
+    /* -----------------------------------------------------------------
+     * MEASUREMENT objects (read-only from the master's perspective)
+     * Source: firmware/src/mpu6050.c, firmware/src/pid.c
+     * Addresses from: arm-none-eabi-nm firmware/build/xcp_pico.elf
+     * ----------------------------------------------------------------- */
+
+    /begin MEASUREMENT g_accel_x
+      "Raw accelerometer X reading"
+      FLOAT32_IEEE CM_IDENTITY 0 0 -4 4
+      ECU_ADDRESS 0x20001A18
+      FORMAT "%.4"
+      UNIT "g"
+    /end MEASUREMENT
+
+    /begin MEASUREMENT g_accel_y
+      "Raw accelerometer Y reading"
+      FLOAT32_IEEE CM_IDENTITY 0 0 -4 4
+      ECU_ADDRESS 0x20001A1C
+      FORMAT "%.4"
+      UNIT "g"
+    /end MEASUREMENT
+
+    /begin MEASUREMENT g_accel_z
+      "Raw accelerometer Z reading"
+      FLOAT32_IEEE CM_IDENTITY 0 0 -4 4
+      ECU_ADDRESS 0x20001A20
+      FORMAT "%.4"
+      UNIT "g"
+    /end MEASUREMENT
+
+    /begin MEASUREMENT g_gyro_x
+      "Raw gyroscope X reading"
+      FLOAT32_IEEE CM_IDENTITY 0 0 -250 250
+      ECU_ADDRESS 0x20001A24
+      FORMAT "%.3"
+      UNIT "deg/s"
+    /end MEASUREMENT
+
+    /begin MEASUREMENT g_gyro_y
+      "Raw gyroscope Y reading"
+      FLOAT32_IEEE CM_IDENTITY 0 0 -250 250
+      ECU_ADDRESS 0x20001A28
+      FORMAT "%.3"
+      UNIT "deg/s"
+    /end MEASUREMENT
+
+    /begin MEASUREMENT g_gyro_z
+      "Raw gyroscope Z reading"
+      FLOAT32_IEEE CM_IDENTITY 0 0 -250 250
+      ECU_ADDRESS 0x20001A2C
+      FORMAT "%.3"
+      UNIT "deg/s"
+    /end MEASUREMENT
+
+    /begin MEASUREMENT g_pitch_deg
+      "Complementary-filter pitch estimate. Positive = nose up."
+      FLOAT32_IEEE CM_IDENTITY 0 0 -180 180
+      ECU_ADDRESS 0x20001A34
+      FORMAT "%.2"
+      UNIT "deg"
+    /end MEASUREMENT
+
+    /begin MEASUREMENT g_pid_output
+      "PID controller output (pre servo-clamp)"
+      FLOAT32_IEEE CM_IDENTITY 0 0 -1000 1000
+      ECU_ADDRESS 0x20001A30
+      FORMAT "%.2"
+      UNIT ""
+    /end MEASUREMENT
+
+    /* -----------------------------------------------------------------
+     * CHARACTERISTIC objects (read/write from the master's perspective)
+     * Source: firmware/src/mpu6050.c, firmware/src/pid.c
+     * ----------------------------------------------------------------- */
+
+    /begin CHARACTERISTIC c_alpha
+      "Complementary filter blending coefficient (gyro weight)"
+      VALUE
+      0x20001180
+      RL_FLOAT32
+      0
+      CM_IDENTITY
+      0.0
+      1.0
+      FORMAT "%.3"
+    /end CHARACTERISTIC
+
+    /begin CHARACTERISTIC c_Kp
+      "PID proportional gain"
+      VALUE
+      0x20001184
+      RL_FLOAT32
+      0
+      CM_IDENTITY
+      -100.0
+      100.0
+      FORMAT "%.3"
+    /end CHARACTERISTIC
+
+    /begin CHARACTERISTIC c_Ki
+      "PID integral gain"
+      VALUE
+      0x200019A4
+      RL_FLOAT32
+      0
+      CM_IDENTITY
+      -100.0
+      100.0
+      FORMAT "%.3"
+    /end CHARACTERISTIC
+
+    /begin CHARACTERISTIC c_Kd
+      "PID derivative gain"
+      VALUE
+      0x200019A0
+      RL_FLOAT32
+      0
+      CM_IDENTITY
+      -100.0
+      100.0
+      FORMAT "%.3"
+    /end CHARACTERISTIC
+
+    /begin CHARACTERISTIC c_setpoint
+      "PID target pitch angle"
+      VALUE
+      0x200019A8
+      RL_FLOAT32
+      0
+      CM_IDENTITY
+      -90.0
+      90.0
+      FORMAT "%.2"
+      UNIT "deg"
+    /end CHARACTERISTIC
+
+    /* -----------------------------------------------------------------
+     * Groups: logical organisation for master tool display
+     * ----------------------------------------------------------------- */
+
+    /begin GROUP MPU6050_Sensor
+      "Raw IMU readings and derived pitch angle"
+      /begin REF_MEASUREMENT
+        g_accel_x g_accel_y g_accel_z
+        g_gyro_x g_gyro_y g_gyro_z
+        g_pitch_deg
+      /end REF_MEASUREMENT
+      /begin REF_CHARACTERISTIC
+        c_alpha
+      /end REF_CHARACTERISTIC
+    /end GROUP
+
+    /begin GROUP PID_Controller
+      "PID gains, setpoint, and controller output"
+      /begin REF_MEASUREMENT
+        g_pid_output
+      /end REF_MEASUREMENT
+      /begin REF_CHARACTERISTIC
+        c_Kp c_Ki c_Kd c_setpoint
+      /end REF_CHARACTERISTIC
+    /end GROUP
+
+  /end MODULE
+
+/end PROJECT
