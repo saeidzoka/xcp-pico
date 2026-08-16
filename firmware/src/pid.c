@@ -1,10 +1,11 @@
 /**
  * @file    pid.c
- * @brief   PID controller implementation (Milestone 6, v2: anti-windup).
+ * @brief   PID controller implementation (Milestone 6, v3: derivative-on-measurement).
  */
 
 #include "pid.h"
 #include "xcp_app.h"
+#include <stdbool.h>
 
 /* -------------------------------------------------------------------------
  * Anti-windup limit
@@ -34,7 +35,8 @@ volatile float g_pid_output = 0.0f;
  * ------------------------------------------------------------------------- */
 
 static float s_integral;
-static float s_prev_error;
+static float s_prev_measurement;
+static bool  s_first_call;
 
 /* -------------------------------------------------------------------------
  * Public API
@@ -42,15 +44,24 @@ static float s_prev_error;
 
 void pid_init(void)
 {
-    s_integral   = 0.0f;
-    s_prev_error = 0.0f;
-    g_pid_output = 0.0f;
+    s_integral         = 0.0f;
+    s_prev_measurement = 0.0f;
+    s_first_call       = true;
+    g_pid_output        = 0.0f;
 }
 
 float pid_update(float measurement, float dt_s)
 {
     if (dt_s <= 0.0f) {
         return g_pid_output;
+    }
+
+    /* On the first call there is no previous measurement to differentiate
+     * against. Seed it with the current value so D starts at zero instead
+     * of producing a spike from an uninitialised (0.0f) baseline. */
+    if (s_first_call) {
+        s_prev_measurement = measurement;
+        s_first_call = false;
     }
 
     const float error = c_setpoint - measurement;
@@ -69,10 +80,11 @@ float pid_update(float measurement, float dt_s)
 
     const float i_term = c_Ki * s_integral;
 
-    /* Derivative-on-error (still has derivative kick on setpoint steps;
-     * see pid.h "KNOWN LIMITATION" note, addressed in a following commit). */
-    const float d_term = c_Kd * (error - s_prev_error) / dt_s;
-    s_prev_error = error;
+    /* Derivative-on-measurement: differentiate the process value, not the
+     * error, so a step change in c_setpoint does not spike D.
+     * See pid.h "DERIVATIVE-ON-MEASUREMENT" note. */
+    const float d_term = -c_Kd * (measurement - s_prev_measurement) / dt_s;
+    s_prev_measurement = measurement;
 
     g_pid_output = p_term + i_term + d_term;
     return g_pid_output;
