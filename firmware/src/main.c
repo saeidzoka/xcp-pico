@@ -23,6 +23,7 @@
 #include "xcp_app.h"
 #include "mpu6050.h"
 #include "servo.h"
+#include "pid.h"
 
 /* -------------------------------------------------------------------------
  * Transport selection and vtable registration
@@ -127,20 +128,31 @@ int main(void)
         }
     }
     servo_init();
+    pid_init();
 
-    while (true)
-    {
-        servo_set_angle(c_servo_angle);
+while (true)
+{
 #if XCP_TRANSPORT_USB_CDC
-        xcp_transport_usb_task();
-        xcp_transport_sxi_task();
+    xcp_transport_usb_task();
+    xcp_transport_sxi_task();
 #elif XCP_TRANSPORT_CAN
-        xcp_transport_can_task();
+    xcp_transport_can_task();
 #endif
-        xcp_protocol_task();
-        mpu6050_task();
-        heartbeat_update();
+    xcp_protocol_task();
+    mpu6050_task();
+
+    static absolute_time_t last_pid_time = {0};
+    absolute_time_t now = get_absolute_time();
+    float dt_s = (float)absolute_time_diff_us(last_pid_time, now) * 1.0e-6f;
+    last_pid_time = now;
+
+    if (dt_s > 0.0f && dt_s < 0.1f) {
+        float output = pid_update(g_pitch_deg, dt_s);
+        servo_set_angle(output);
     }
+
+    heartbeat_update();
+}
 
     return 0;
 }

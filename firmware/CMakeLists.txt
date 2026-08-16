@@ -41,6 +41,7 @@ add_executable(xcp_pico
     src/xcp_protocol.c
     src/mpu6050.c
     src/servo.c
+    src/pid.c
 )
 
 # Public headers shared across modules live in include/.

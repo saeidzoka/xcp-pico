@@ -68,14 +68,20 @@ extern volatile float c_alpha;
 extern volatile float c_servo_angle;
 
 /* -------------------------------------------------------------------------
- * PID controller (Phase 2 - reserved)
- * Defined in: pid.c (not yet implemented)
+ * PID controller (read/write for gains and setpoint, read-only for output)
+ * Defined in: pid.c
  * ------------------------------------------------------------------------- */
-/* extern volatile float c_Kp;        */
-/* extern volatile float c_Ki;        */
-/* extern volatile float c_Kd;        */
-/* extern volatile float c_setpoint;  */
-/* extern volatile float g_pid_output; */
+
+/** PID gains. Writable via XCP DOWNLOAD for live tuning. */
+extern volatile float c_Kp;
+extern volatile float c_Ki;
+extern volatile float c_Kd;
+
+/** Target pitch angle in degrees. Writable via XCP DOWNLOAD. */
+extern volatile float c_setpoint;
+
+/** Current controller output (before servo clamping). Read-only. */
+extern volatile float g_pid_output;
 
 #ifdef __cplusplus
 }
